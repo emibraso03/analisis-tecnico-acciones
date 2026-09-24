@@ -32,11 +32,11 @@ def build(outdir, script_dir):
     tf_word = "diarias" if interval == "daily" else "semanales"  # "velas ___"
     tf_unit = "sesiones" if interval == "daily" else "semanas"  # "20/50/200 ___"
 
-    title = f"{ticker} - Analisis tecnico con SMA, RSI, MACD, Koncorde y semaforo"
+    title = f"{ticker} - Analisis tecnico con SMA, RSI, MACD, volumen, Koncorde y semaforo"
     h1 = f"{ticker} - {company}"
     subtitle = (
         f"Velas {tf_word}, historico completo ({a['data_start'][:4]} - hoy), "
-        f"con SMA 20/50/200, RSI 14, MACD, Koncorde (aprox.), soportes/resistencias, "
+        f"con SMA 20/50/200, RSI 14, MACD, volumen + OBV, Koncorde (aprox.), soportes/resistencias, "
         f"canales de tendencia y semaforo tecnico."
     )
 
@@ -49,6 +49,9 @@ def build(outdir, script_dir):
     out = out.replace("__ARIA_MAIN__",
                        f"Grafico de velas {tf_word} de {ticker} con medias moviles de 20, 50 y 200 {tf_unit}, "
                        f"soportes, resistencias, canales de tendencia y maximo historico")
+    out = out.replace("__ARIA_VOL__",
+                       f"Volumen {'diario' if interval == 'daily' else 'semanal'} de {ticker} "
+                       f"con media movil de 20 {tf_unit} y On-Balance Volume")
     out = out.replace("__ARIA_RSI__", f"Indicador RSI de 14 {tf_unit} para {ticker}")
     out = out.replace("__ARIA_MACD__", f"Indicador MACD para {ticker}")
     out = out.replace("__ARIA_KON__",
