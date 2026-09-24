@@ -3,7 +3,8 @@
 Analisis tecnico automatizado de una accion a partir de su historico semanal
 (OHLCV) descargado de Twelve Data.
 
-Calcula: SMA20/50/200, RSI14, MACD(12,26,9), una reconstruccion aproximada
+Calcula: SMA20/50/200, RSI14, MACD(12,26,9), volumen (SMA20 de volumen,
+RVOL y OBV), una reconstruccion aproximada
 del indicador Koncorde (PVI/NVI + RSI + MFI + Bollinger + Estocastico),
 niveles de soporte/resistencia (giros significativos con prominencia minima
 y vigencia reciente), canales de tendencia historicos (convex hull por
@@ -79,6 +80,46 @@ def add_macd(df, fast=12, slow=26, signal=9):
     df["macd_signal"] = df["macd"].ewm(span=signal, adjust=False).mean()
     df["macd_hist"] = df["macd"] - df["macd_signal"]
     return df
+
+
+# --------------------------------------------------------------------------
+# Volumen: SMA20 de volumen, volumen relativo (RVOL) y OBV
+# --------------------------------------------------------------------------
+def has_volume(df):
+    v = df["volume"]
+    return bool(v.notna().any() and (v.fillna(0) > 0).any())
+
+
+def add_volume(df, period=20):
+    vol = df["volume"].fillna(0)
+    df["vol_sma20"] = vol.rolling(period).mean()
+    df["rvol"] = vol / df["vol_sma20"].replace(0, np.nan)
+    direction = np.sign(df["close"].diff()).fillna(0)
+    df["obv"] = (direction * vol).cumsum()
+    return df
+
+
+def volume_confirmation(df, lookback=20):
+    """Compara la direccion del precio vs la del OBV en las ultimas `lookback`
+    velas (pendiente de una regresion lineal, normalizada por el nivel medio
+    para que sea comparable). Devuelve 'confirmacion_alcista',
+    'confirmacion_bajista', 'divergencia_bajista' (precio sube, OBV baja),
+    'divergencia_alcista' (precio baja, OBV sube) o 'indeterminado'."""
+    tail = df.tail(lookback)
+    if len(tail) < lookback or tail["obv"].isna().any():
+        return "indeterminado"
+    x = np.arange(len(tail))
+    p_slope = np.polyfit(x, tail["close"].values, 1)[0]
+    o_slope = np.polyfit(x, tail["obv"].values, 1)[0]
+    if p_slope == 0 or o_slope == 0:
+        return "indeterminado"
+    if p_slope > 0 and o_slope > 0:
+        return "confirmacion_alcista"
+    if p_slope < 0 and o_slope < 0:
+        return "confirmacion_bajista"
+    if p_slope > 0 and o_slope < 0:
+        return "divergencia_bajista"
+    return "divergencia_alcista"
 
 
 # --------------------------------------------------------------------------
@@ -502,6 +543,12 @@ def analyze(input_path, ticker, company, outdir, currency="USD", interval="weekl
     df = add_smas(df)
     df = add_rsi(df)
     df = add_macd(df)
+    volume_ok = has_volume(df)
+    if volume_ok:
+        df = add_volume(df)
+    else:
+        for c in ["vol_sma20", "rvol", "obv"]:
+            df[c] = np.nan
     df = add_koncorde(df)
 
     last = df.iloc[-1]
@@ -558,6 +605,11 @@ def analyze(input_path, ticker, company, outdir, currency="USD", interval="weekl
         "koncorde_media": round(float(last["media"]), 1) if not np.isnan(last["media"]) else None,
         "koncorde_azul": round(float(last["azul"]), 1) if not np.isnan(last["azul"]) else None,
         "koncorde_verde": round(float(last["verde"]), 1) if not np.isnan(last["verde"]) else None,
+        "has_volume": volume_ok,
+        "volume_last": int(last["volume"]) if volume_ok and not np.isnan(last["volume"]) else None,
+        "volume_sma20": int(last["vol_sma20"]) if volume_ok and not np.isnan(last["vol_sma20"]) else None,
+        "rvol": round(float(last["rvol"]), 2) if volume_ok and not np.isnan(last["rvol"]) else None,
+        "volume_confirmation": volume_confirmation(df) if volume_ok else "sin_volumen",
         "support_resistance_levels": levels,
         "nearest_support": nearest_support,
         "nearest_resistance": nearest_resistance,
@@ -595,6 +647,16 @@ def analyze(input_path, ticker, company, outdir, currency="USD", interval="weekl
             items.append('{time:"%s",value:%s,color:%s}' % (dt.strftime("%Y-%m-%d"), round(float(v), 4), color))
         return "[" + ",".join(items) + "]"
 
+    def volume_hist_json():
+        if not volume_ok:
+            return "[]"
+        d = df[["datetime", "open", "close", "volume"]].dropna()
+        items = []
+        for dt, o, c, v in zip(d["datetime"], d["open"], d["close"], d["volume"]):
+            color = "rgba(0,131,0,0.45)" if c >= o else "rgba(227,73,72,0.45)"
+            items.append('{time:"%s",value:%d,color:"%s"}' % (dt.strftime("%Y-%m-%d"), int(v), color))
+        return "[" + ",".join(items) + "]"
+
     def koncorde_hist_json(col, color):
         d = df[["datetime", col]].dropna()
         items = []
@@ -623,6 +685,10 @@ def analyze(input_path, ticker, company, outdir, currency="USD", interval="weekl
     js_parts.append("const macdData = %s;" % series_json("macd", 4))
     js_parts.append("const macdSignalData = %s;" % series_json("macd_signal", 4))
     js_parts.append("const macdHistData = %s;" % macd_hist_json())
+    js_parts.append("const hasVolume = %s;" % ("true" if volume_ok else "false"))
+    js_parts.append("const volumeHist = %s;" % volume_hist_json())
+    js_parts.append("const volSmaData = %s;" % (series_json("vol_sma20", 0) if volume_ok else "[]"))
+    js_parts.append("const obvData = %s;" % (series_json("obv", 0) if volume_ok else "[]"))
     js_parts.append("const verdeHist = %s;" % koncorde_hist_json("verde", "rgba(87,227,137,0.55)"))
     js_parts.append("const marronHist = %s;" % koncorde_hist_json("marron", "rgba(240,168,96,0.55)"))
     js_parts.append("const azulHist = %s;" % koncorde_hist_json("azul", "rgba(62,203,240,0.55)"))
@@ -709,6 +775,35 @@ def build_report(analysis):
     hist_dir = "histograma positivo y momentum a favor" if macd_hist > 0 else "histograma negativo, momentum en contra"
     lines.append(f"- MACD: {macd} | Senal: {macd_sig} | Histograma: {macd_hist}")
     lines.append(f"- Lectura: {cross}; {hist_dir}")
+    lines.append("")
+
+    lines.append("## Volumen")
+    if a.get("has_volume"):
+        rvol = a["rvol"]
+        if rvol is None:
+            rvol_read = "sin historia suficiente para la SMA20 de volumen"
+        elif rvol >= 2:
+            rvol_read = "volumen muy por encima de lo normal: movimiento con participacion fuerte"
+        elif rvol >= 1.2:
+            rvol_read = "volumen por encima de lo normal"
+        elif rvol <= 0.6:
+            rvol_read = "volumen muy por debajo de lo normal: movimiento con poca conviccion"
+        else:
+            rvol_read = "volumen en linea con su media"
+        conf_map = {
+            "confirmacion_alcista": "precio y OBV suben juntos: la suba esta acompanada por volumen",
+            "confirmacion_bajista": "precio y OBV bajan juntos: la baja esta acompanada por volumen",
+            "divergencia_bajista": "precio sube pero el OBV baja: suba sin respaldo de volumen (divergencia bajista)",
+            "divergencia_alcista": "precio baja pero el OBV sube: acumulacion pese a la caida (divergencia alcista)",
+            "indeterminado": "sin direccion clara",
+        }
+        lines.append(f"- Volumen ultima vela: {a['volume_last']:,} | SMA20 de volumen: "
+                     f"{a['volume_sma20']:,} | RVOL: {rvol}" if a["volume_sma20"] is not None else
+                     f"- Volumen ultima vela: {a['volume_last']:,}")
+        lines.append(f"- Lectura: {rvol_read}")
+        lines.append(f"- OBV vs precio (ultimas 20 velas): {conf_map.get(a['volume_confirmation'], a['volume_confirmation'])}")
+    else:
+        lines.append("- La fuente no trae volumen para este instrumento: panel de volumen omitido.")
     lines.append("")
 
     lines.append("## Koncorde (reconstruccion aproximada, no oficial)")

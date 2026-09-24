@@ -54,10 +54,11 @@
   .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
   .pane-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
   .note { font-size: 11px; color: var(--text-secondary); margin: 4px 0 0; }
-  #chart_main, #chart_rsi, #chart_macd, #chart_konkorde {
+  #chart_main, #chart_vol, #chart_rsi, #chart_macd, #chart_konkorde {
     width: 100%; border: 0.5px solid var(--border); border-radius: 12px; overflow: hidden;
   }
   #chart_main { height: 400px; }
+  #chart_vol { height: 140px; margin-top: 8px; }
   #chart_rsi { height: 140px; margin-top: 8px; }
   #chart_macd { height: 150px; margin-top: 8px; }
   #chart_konkorde { height: 190px; margin-top: 8px; }
@@ -107,6 +108,19 @@
     <div id="chart_main" role="img" aria-label="__ARIA_MAIN__"></div>
   </div>
 
+  <div class="panel" id="panel_vol">
+    <div class="panel-header">
+      <span class="pane-label">Volumen</span>
+      <span class="legend">
+        <span><span class="swatch" style="background:rgba(0,131,0,0.45);"></span>Vela alcista</span>
+        <span><span class="swatch" style="background:rgba(227,73,72,0.45);"></span>Vela bajista</span>
+        <span><span class="swatch" style="background:#eda100;"></span>SMA 20 vol.</span>
+        <span><span class="swatch" style="background:#6250d6;"></span>OBV (eje izq.)</span>
+      </span>
+    </div>
+    <div id="chart_vol" role="img" aria-label="__ARIA_VOL__"></div>
+  </div>
+
   <div class="panel">
     <div class="panel-header"><span class="pane-label">RSI (14)</span></div>
     <div id="chart_rsi" role="img" aria-label="__ARIA_RSI__"></div>
@@ -144,12 +158,14 @@
 __CHART_DATA_JS__
 
   const mainEl = document.getElementById('chart_main');
+  const volEl = document.getElementById('chart_vol');
+  if (!hasVolume) { document.getElementById('panel_vol').style.display = 'none'; }
   const rsiEl = document.getElementById('chart_rsi');
   const macdEl = document.getElementById('chart_macd');
   const konEl = document.getElementById('chart_konkorde');
 
   if (typeof LightweightCharts === 'undefined') {
-    [mainEl, rsiEl, macdEl, konEl].forEach(el => {
+    [mainEl, volEl, rsiEl, macdEl, konEl].forEach(el => {
       el.innerHTML = '<div style="padding:2rem; text-align:center; color: var(--text-secondary); font-size:14px;">No se pudo cargar la libreria de graficos. Proba recargar la pagina.</div>';
     });
     return;
@@ -210,6 +226,19 @@ __CHART_DATA_JS__
     chartMain.addLineSeries({ color: structureColor, lineWidth: l.width, lineStyle: 0, priceLineVisible: false, lastValueVisible: false }).setData(l.data);
   });
 
+  let chartVol = null;
+  if (hasVolume) {
+    const volOpts = baseOptions(volEl);
+    volOpts.leftPriceScale = { visible: true, borderColor: gridColor };
+    chartVol = LightweightCharts.createChart(volEl, volOpts);
+    chartVol.addHistogramSeries({ priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false })
+      .setData(volumeHist);
+    chartVol.addLineSeries({ color: '#eda100', lineWidth: 2, priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false })
+      .setData(volSmaData);
+    chartVol.addLineSeries({ color: '#6250d6', lineWidth: 2, priceScaleId: 'left', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false })
+      .setData(obvData);
+  }
+
   const chartRsi = LightweightCharts.createChart(rsiEl, baseOptions(rsiEl));
   const rsiSeries = chartRsi.addLineSeries({ color: '#378add', lineWidth: 2, lastValueVisible: false });
   rsiSeries.setData(rsiData);
@@ -233,6 +262,7 @@ __CHART_DATA_JS__
 
   const charts = [chartMain, chartRsi, chartMacd, chartKon];
   const elems = [mainEl, rsiEl, macdEl, konEl];
+  if (chartVol) { charts.splice(1, 0, chartVol); elems.splice(1, 0, volEl); }
   let syncing = false;
   charts.forEach(chart => {
     chart.timeScale().subscribeVisibleLogicalRangeChange(range => {

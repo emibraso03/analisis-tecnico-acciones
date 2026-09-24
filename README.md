@@ -11,6 +11,7 @@ A partir de un ticker (o el nombre de la empresa) y una temporalidad (**diaria**
 - Velas japonesas con SMA 20 / 50 / 200
 - RSI (14)
 - MACD (12, 26, 9)
+- Volumen: histograma coloreado por dirección de la vela, SMA 20 de volumen y OBV (On-Balance Volume); el informe reporta el volumen relativo (RVOL) y si el OBV confirma o diverge del precio
 - Koncorde aproximado (reconstrucción propia a partir de la fórmula pública de 2008: PVI/NVI + RSI + MFI + Bollinger + Estocástico)
 - Soportes y resistencias por giros significativos (con mínimo de toques y vigencia reciente)
 - Máximo histórico (usando solo apertura/cierre, sin mechas)
@@ -24,17 +25,20 @@ Los gráficos están sincronizados y usan [TradingView Lightweight Charts](https
 
 ```
 analisis-tecnico-acciones/
-├── SKILL.md              # la skill (fuente de verdad): flujo, decisiones de diseño y scripts embebidos
+├── SKILL.md              # la skill: flujo de trabajo
 ├── scripts/
 │   ├── analyze.py        # indicadores, niveles, canales y señal compuesta
 │   ├── gauge.py          # SVG del semáforo
-│   ├── build_artifact.py # arma el HTML final
+│   └── build_artifact.py # arma el HTML final
+├── assets/
 │   └── template.html     # plantilla del Artifact
+├── references/
+│   └── diseno.md         # decisiones de diseño (leer solo para modificar los scripts)
 ├── LICENSE
 └── README.md
 ```
 
-`SKILL.md` embebe el código de `scripts/` porque así la skill lo reconstruye dentro de Claude. La carpeta `scripts/` es una copia para que se pueda leer y probar cómodamente en GitHub.
+La skill corre los scripts directamente desde su carpeta: `SKILL.md` ya no embebe el código, así que `scripts/` y `assets/` son la única copia.
 
 ## Cómo usarla
 
@@ -52,7 +56,7 @@ pip install pandas numpy scipy
 python3 scripts/analyze.py --input KO_weekly_raw.csv --ticker KO \
   --company "The Coca-Cola Company" --outdir out/KO --currency USD --interval weekly
 
-python3 scripts/build_artifact.py --outdir out/KO --script-dir scripts
+python3 scripts/build_artifact.py --outdir out/KO --script-dir assets
 ```
 
 Abrí `out/KO/artifact.html` en el navegador. El informe en texto queda en `out/KO/report.md`.
